@@ -15,6 +15,12 @@
   ],
   "keywords": [
     "rpgle",
+    "sqlrpgle",
+    "clle",
+    "cl38",
+    "dspf",
+    "pf",
+    "dds",
     "rpg",
     "ibmi",
     "as400",
@@ -29,7 +35,9 @@
   "activationEvents": [
     "onLanguage:rpgle",
     "onCommand:rpgenius.analyzeFile",
-    "onCommand:rpgenius.analyzeWorkspace"
+    "onCommand:rpgenius.analyzeWorkspace",
+    "onCommand:rpgenius.analyzeIbmiMember",
+    "onCommand:rpgenius.visualizeSource"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -66,6 +74,12 @@
         "icon": "$(folder)"
       },
       {
+        "command": "rpgenius.analyzeIbmiMember",
+        "title": "Analyze IBM i Member",
+        "category": "RPGenius",
+        "icon": "$(server-environment)"
+      },
+      {
         "command": "rpgenius.refresh",
         "title": "Refresh Tree",
         "category": "RPGenius",
@@ -81,6 +95,17 @@
         "command": "rpgenius.navigateToLine",
         "title": "Go to Source Line",
         "category": "RPGenius"
+      },
+      {
+        "command": "rpgenius.openIbmiObjectSource",
+        "title": "Open IBM i Object Source",
+        "category": "RPGenius"
+      },
+      {
+        "command": "rpgenius.visualizeSource",
+        "title": "Visualize DDS Source",
+        "category": "RPGenius",
+        "icon": "$(preview)"
       }
     ],
     "menus": {
@@ -103,14 +128,24 @@
           "group": "navigation@2"
         },
         {
-          "command": "rpgenius.refresh",
+          "command": "rpgenius.analyzeIbmiMember",
           "when": "view == rpgeniusAnalyzer",
           "group": "navigation@3"
         },
         {
-          "command": "rpgenius.clearResults",
+          "command": "rpgenius.refresh",
           "when": "view == rpgeniusAnalyzer",
           "group": "navigation@4"
+        },
+        {
+          "command": "rpgenius.clearResults",
+          "when": "view == rpgeniusAnalyzer",
+          "group": "navigation@5"
+        },
+        {
+          "command": "rpgenius.visualizeSource",
+          "when": "view == rpgeniusAnalyzer",
+          "group": "navigation@6"
         }
       ],
       "explorer/context": [
@@ -133,7 +168,16 @@
           ".rpg",
           ".RPGLE",
           ".RPG",
-          ".rpgleinc"
+            ".rpgleinc",
+            ".sqlrpgle",
+            ".sqlrpg",
+            ".clle",
+            ".cl38",
+            ".clp",
+            ".pf",
+            ".pfdds",
+            ".dspf",
+            ".dds"
         ]
       }
     ]

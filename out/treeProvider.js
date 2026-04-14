@@ -107,15 +107,44 @@ function getThemeIcon(kind) {
 // ─── Tree Builder ─────────────────────────────────────────────────────────────
 /**
  * Builds the full tree from a parsed RpgleProgram.
+ * Categories shown depend on sourceType for relevance.
  */
 function buildTree(program, filePath) {
-    const root = new RpgTreeItem(`${program.programName}`, 'root', vscode.TreeItemCollapsibleState.Expanded, [], undefined, undefined, `[${program.sourceFormat}] · ${program.totalLines} lines`, `${program.programName} — ${program.sourceFormat} format · ${program.totalLines} lines · Parsed at ${program.parsedAt.toLocaleTimeString()}`);
+    const sourceType = program.sourceType ?? 'RPGLE';
+    const root = new RpgTreeItem(`${program.programName}`, 'root', vscode.TreeItemCollapsibleState.Expanded, [], undefined, undefined, `[${sourceType} | ${program.sourceFormat}] · ${program.totalLines} lines`, `${program.programName} — ${sourceType} · ${program.sourceFormat} format · ${program.totalLines} lines · Parsed at ${program.parsedAt.toLocaleTimeString()}`);
+    // ─── Source-specific tree building ───────────────────────────────────────
+    if (sourceType === 'PF_DDS' || sourceType === 'DSPF_DDS') {
+        buildDdsTree(program, filePath, root);
+    }
+    else if (sourceType === 'CLLE' || sourceType === 'CL38') {
+        buildClTree(program, filePath, root);
+    }
+    else {
+        buildRpgleTree(program, filePath, root);
+    }
+    return [root];
+}
+/**
+ * Build tree for RPGLE/SQLRPGLE programs (full analysis).
+ */
+function buildRpgleTree(program, filePath, root) {
     // ── Files ──────────────────────────────────────────────────────────────────
     const fileItems = program.files.map(f => {
         const typeStr = f.fileType !== 'UNKNOWN' ? f.fileType : '?';
         const label = f.name;
+        const resolved = f.resolvedObject
+            ? ` · ${f.resolvedObject.library}/${f.resolvedObject.objectName}`
+            : '';
         const desc = `${f.usage} / ${typeStr}${f.isDisplayFile ? ' · DSPF' : ''}${f.isPrinterFile ? ' · PRTF' : ''}${f.keyed ? ' · Keyed' : ''}`;
-        return new RpgTreeItem(label, 'file', vscode.TreeItemCollapsibleState.None, [], f.location, filePath, desc, `File: ${f.name}\nUsage: ${f.usage}\nType: ${typeStr}\nLine: ${f.location.line + 1}\n${f.location.rawLine.trim()}`);
+        const item = new RpgTreeItem(label, 'file', vscode.TreeItemCollapsibleState.None, [], f.location, filePath, `${desc}${resolved}`, `File: ${f.name}\nUsage: ${f.usage}\nType: ${typeStr}\n${f.resolvedObject ? `Resolved: ${f.resolvedObject.library}/${f.resolvedObject.objectName} (${f.resolvedObject.objectType})\n` : ''}Line: ${f.location.line + 1}\n${f.location.rawLine.trim()}`);
+        if (f.resolvedObject?.library) {
+            item.command = {
+                command: 'rpgenius.openIbmiObjectSource',
+                title: 'Open IBM i Source',
+                arguments: [f.resolvedObject],
+            };
+        }
+        return item;
     });
     root.children.push(makeCategory('Files', 'database', fileItems, filePath));
     // ── Copybooks ──────────────────────────────────────────────────────────────
@@ -126,7 +155,18 @@ function buildTree(program, filePath) {
     root.children.push(makeCategory('Copybooks', 'library', cbItems, filePath));
     // ── Programs Called ────────────────────────────────────────────────────────
     const callItems = program.programCalls.map(c => {
-        return new RpgTreeItem(c.programName, 'call', vscode.TreeItemCollapsibleState.None, [], c.location, filePath, c.callType, `CALL: ${c.programName} (${c.callType})\nLine: ${c.location.line + 1}\n${c.location.rawLine.trim()}`);
+        const desc = c.resolvedObject
+            ? `${c.callType} · ${c.resolvedObject.library}/${c.resolvedObject.objectName}`
+            : c.callType;
+        const item = new RpgTreeItem(c.programName, 'call', vscode.TreeItemCollapsibleState.None, [], c.location, filePath, desc, `CALL: ${c.programName} (${c.callType})\n${c.resolvedObject ? `Resolved: ${c.resolvedObject.library}/${c.resolvedObject.objectName} (${c.resolvedObject.objectType})\n` : ''}Line: ${c.location.line + 1}\n${c.location.rawLine.trim()}`);
+        if (c.resolvedObject?.library) {
+            item.command = {
+                command: 'rpgenius.openIbmiObjectSource',
+                title: 'Open IBM i Source',
+                arguments: [c.resolvedObject],
+            };
+        }
+        return item;
     });
     root.children.push(makeCategory('Programs Called', 'call-outgoing', callItems, filePath));
     // ── Procedures ────────────────────────────────────────────────────────────
@@ -182,6 +222,97 @@ function buildTree(program, filePath) {
         return new RpgTreeItem(pr.name, 'prototype', vscode.TreeItemCollapsibleState.None, [], pr.location, filePath, desc, `Prototype: ${pr.name}\nExternal: ${pr.externalName ?? 'n/a'}\nLine: ${pr.location.line + 1}`);
     });
     root.children.push(makeCategory('Prototypes', 'symbol-interface', prItems, filePath));
+    // ── Field Validation Issues ───────────────────────────────────────────────
+    const issueItems = program.fieldValidationIssues.map(issue => {
+        return new RpgTreeItem(`${issue.fileName}.${issue.fieldName}`, 'message', vscode.TreeItemCollapsibleState.None, [], issue.location, filePath, `Line ${issue.location.line + 1}`, `${issue.message}\nLine: ${issue.location.line + 1}\n${issue.location.rawLine.trim()}`);
+    });
+    root.children.push(makeCategory('Field Validation Issues', 'warning', issueItems, filePath));
+}
+/**
+ * Build tree for CLLE/CL38 programs (c-specific analysis, simplified).
+ */
+function buildClTree(program, filePath, root) {
+    // Only show relevant categories for CL
+    // ── Variables ──────────────────────────────────────────────────────────────
+    const varItems = program.variables.map(v => {
+        const desc = v.varType;
+        return new RpgTreeItem(v.name, 'variable', vscode.TreeItemCollapsibleState.None, [], v.location, filePath, desc, `Variable: ${v.name}\nType: ${v.varType}\nLine: ${v.location.line + 1}`);
+    });
+    if (varItems.length > 0) {
+        root.children.push(makeCategory('Variables', 'symbol-variable', varItems, filePath));
+    }
+    // ── Files (OVR overrides) ──────────────────────────────────────────────────
+    const fileItems = program.files.map(f => {
+        const typeStr = f.fileType !== 'UNKNOWN' ? f.fileType : '?';
+        const label = f.name;
+        const desc = `${f.usage} / ${typeStr}`;
+        return new RpgTreeItem(label, 'file', vscode.TreeItemCollapsibleState.None, [], f.location, filePath, desc, `File: ${f.name}\nUsage: ${f.usage}\nType: ${typeStr}\nLine: ${f.location.line + 1}\n${f.location.rawLine.trim()}`);
+    });
+    if (fileItems.length > 0) {
+        root.children.push(makeCategory('Files (Overrides)', 'database', fileItems, filePath));
+    }
+    // ── Programs Called ────────────────────────────────────────────────────────
+    const callItems = program.programCalls.map(c => {
+        return new RpgTreeItem(c.programName, 'call', vscode.TreeItemCollapsibleState.None, [], c.location, filePath, c.callType, `CALL: ${c.programName} (${c.callType})\nLine: ${c.location.line + 1}\n${c.location.rawLine.trim()}`);
+    });
+    if (callItems.length > 0) {
+        root.children.push(makeCategory('Programs Called', 'call-outgoing', callItems, filePath));
+    }
+}
+/**
+ * Build tree for PF/DSPF DDS sources (file-specific analysis).
+ */
+function buildDdsTree(program, filePath, root) {
+    // ── Record Formats / Fields ────────────────────────────────────────────────
+    const dsItems = program.dataStructures.map(ds => {
+        const sfItems = ds.subfields.map(sf => {
+            const attrStr = sf.attributes
+                ? Object.entries(sf.attributes)
+                    .map(([k, v]) => `${k}=${v}`)
+                    .join(', ')
+                : '';
+            const lenStr = sf.length ? ` (${sf.length}${sf.decimals ? `,${sf.decimals}` : ''})` : '';
+            const label = `${sf.name} : ${sf.type}${lenStr}`;
+            const heading = sf.columnHeading ? `\nColumn Heading: ${sf.columnHeading}` : '';
+            return new RpgTreeItem(label, 'subfield', vscode.TreeItemCollapsibleState.None, [], sf.location, filePath, attrStr || sf.type, `Field: ${sf.name}\nType: ${sf.type}${lenStr}${heading}\nAttributes: ${attrStr || 'none'}\nLine: ${sf.location.line + 1}`);
+        });
+        const desc = `${ds.subfields.length} field${ds.subfields.length !== 1 ? 's' : ''}`;
+        return new RpgTreeItem(ds.name, 'dataStructure', sfItems.length > 0 ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None, sfItems, ds.startLocation, filePath, desc, `Record Format: ${ds.name}\nLine: ${ds.startLocation.line + 1}`);
+    });
+    root.children.push(makeCategory('Record Formats', 'symbol-structure', dsItems, filePath));
+    // ── Keys ───────────────────────────────────────────────────────────────────
+    const keyItems = program.ddsKeys.map(key => {
+        return new RpgTreeItem(key.name, 'subfield', vscode.TreeItemCollapsibleState.None, [], key.location, filePath, `${key.keyType} · ${key.keyFields.join(', ')}`, `Key: ${key.name}\nType: ${key.keyType}\nFields: ${key.keyFields.join(', ')}\nLine: ${key.location.line + 1}`);
+    });
+    if (keyItems.length > 0) {
+        root.children.push(makeCategory('Keys', 'symbol-constant', keyItems, filePath));
+    }
+    // ── Visualization option for DSPF ─────────────────────────────────────────
+    if (program.sourceType === 'DSPF_DDS') {
+        const vizItem = new RpgTreeItem('View Green-Screen Preview', 'message', vscode.TreeItemCollapsibleState.None, [], { line: 0, rawLine: '' }, undefined, 'Click to visualize', 'View this DSPF as a 5250 green-screen terminal');
+        vizItem.command = {
+            command: 'rpgenius.visualizeSource',
+            title: 'Visualize DSPF',
+            arguments: [],
+        };
+        root.children.push(vizItem);
+    }
+    // ── Visualization option for PF ──────────────────────────────────────────
+    if (program.sourceType === 'PF_DDS') {
+        const vizItem = new RpgTreeItem('View Tabular Preview', 'message', vscode.TreeItemCollapsibleState.None, [], { line: 0, rawLine: '' }, undefined, 'Click to visualize', 'View this PF fields as a table');
+        vizItem.command = {
+            command: 'rpgenius.visualizeSource',
+            title: 'Visualize PF',
+            arguments: [],
+        };
+        root.children.push(vizItem);
+    }
+}
+/**
+ * Builds tree categories from a root item and returns as final array.
+ * Called at the end of buildTree.
+ */
+function finalizeTree(root) {
     return [root];
 }
 /**

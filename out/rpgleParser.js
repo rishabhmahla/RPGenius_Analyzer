@@ -62,6 +62,7 @@ function parseRpgle(source, filePath) {
     const program = {
         programName,
         filePath,
+        sourceType: 'RPGLE',
         sourceFormat: 'FIXED',
         totalLines: lines.length,
         copybooks: [],
@@ -69,11 +70,13 @@ function parseRpgle(source, filePath) {
         programCalls: [],
         procedures: [],
         dataStructures: [],
+        ddsKeys: [],
         sqlStatements: [],
         cursors: [],
         variables: [],
         prototypes: [],
         warnings: [],
+        fieldValidationIssues: [],
         parsedAt: new Date(),
     };
     const state = {

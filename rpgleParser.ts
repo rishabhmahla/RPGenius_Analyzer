@@ -65,6 +65,7 @@ export function parseRpgle(source: string, filePath: string): RpgleProgram {
   const program: RpgleProgram = {
     programName,
     filePath,
+    sourceType: 'RPGLE',
     sourceFormat: 'FIXED',
     totalLines: lines.length,
     copybooks: [],
@@ -72,11 +73,13 @@ export function parseRpgle(source: string, filePath: string): RpgleProgram {
     programCalls: [],
     procedures: [],
     dataStructures: [],
+    ddsKeys: [],
     sqlStatements: [],
     cursors: [],
     variables: [],
     prototypes: [],
     warnings: [],
+    fieldValidationIssues: [],
     parsedAt: new Date(),
   };
 

@@ -41,6 +41,7 @@ exports.RPGLE_EXTENSIONS = void 0;
 exports.readFileSafe = readFileSafe;
 exports.getActiveEditorContent = getActiveEditorContent;
 exports.isRpgleFile = isRpgleFile;
+exports.isAnalyzableSource = isAnalyzableSource;
 exports.findRpgleFiles = findRpgleFiles;
 exports.highlightLines = highlightLines;
 exports.clearHighlights = clearHighlights;
@@ -56,7 +57,10 @@ const path = __importStar(require("path"));
 // ─── RPGLE File Extensions ────────────────────────────────────────────────────
 /** Extensions commonly used for RPGLE source files */
 exports.RPGLE_EXTENSIONS = new Set([
-    '.rpgle', '.rpg', '.pgm', '.srvpgm',
+    '.rpgle', '.rpg', '.sqlrpgle', '.sqlrpg',
+    '.clle', '.cl38', '.clp',
+    '.pf', '.pfdds', '.dspf', '.dds',
+    '.pgm', '.srvpgm',
     '.rpgleinc', '.rpglesrc', '.mbr', '.RPGLE', '.RPG',
 ]);
 // ─── File Reading ─────────────────────────────────────────────────────────────
@@ -82,7 +86,7 @@ function getActiveEditorContent() {
     }
     return {
         content: editor.document.getText(),
-        filePath: editor.document.fileName,
+        filePath: editor.document.uri.toString(true),
     };
 }
 // ─── RPGLE File Detection ─────────────────────────────────────────────────────
@@ -108,13 +112,29 @@ function isRpgleFile(filePath, content) {
     }
     return false;
 }
+function isAnalyzableSource(filePath, content) {
+    const ext = path.extname(filePath).toLowerCase();
+    if (exports.RPGLE_EXTENSIONS.has(ext)) {
+        return true;
+    }
+    if (content) {
+        const firstLines = content.split('\n').slice(0, 40).join('\n').toUpperCase();
+        return (isRpgleFile(filePath, content) ||
+            firstLines.includes('EXEC SQL') ||
+            firstLines.includes('PGM') ||
+            firstLines.includes('DCL VAR(') ||
+            firstLines.includes('OVRDBF') ||
+            /^.{5}A/m.test(content));
+    }
+    return false;
+}
 // ─── Workspace Scanning ───────────────────────────────────────────────────────
 /**
  * Recursively finds all RPGLE files in the given workspace folder.
  * Respects the workspace's exclude settings.
  */
 async function findRpgleFiles(workspaceFolder) {
-    const pattern = new vscode.RelativePattern(workspaceFolder, '**/*.{rpgle,rpg,RPGLE,RPG,rpgleinc}');
+    const pattern = new vscode.RelativePattern(workspaceFolder, '**/*.{rpgle,rpg,sqlrpgle,sqlrpg,clle,cl38,clp,pf,pfdds,dspf,dds,RPGLE,RPG,rpgleinc}');
     const excludes = getExcludePattern();
     return vscode.workspace.findFiles(pattern, excludes, 500);
 }
@@ -178,7 +198,7 @@ function disposeDecorations() {
  */
 async function navigateToLine(filePath, lineNumber) {
     try {
-        const uri = vscode.Uri.file(filePath);
+        const uri = toDocumentUri(filePath);
         const doc = await vscode.workspace.openTextDocument(uri);
         const editor = await vscode.window.showTextDocument(doc, {
             viewColumn: vscode.ViewColumn.One,
@@ -199,6 +219,12 @@ async function navigateToLine(filePath, lineNumber) {
         const msg = err instanceof Error ? err.message : String(err);
         vscode.window.showErrorMessage(`RPGenius: Cannot navigate to file — ${msg}`);
     }
+}
+function toDocumentUri(resource) {
+    if (/^[a-z][a-z0-9+.-]*:/i.test(resource)) {
+        return vscode.Uri.parse(resource);
+    }
+    return vscode.Uri.file(resource);
 }
 // ─── Status Bar ───────────────────────────────────────────────────────────────
 let statusBarItem;

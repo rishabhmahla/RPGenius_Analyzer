@@ -32,7 +32,12 @@ function buildDependencyGraphFromMany(programs) {
             programName: program.programName,
             filePath: program.filePath,
             calls: dedupeNames(program.programCalls.map(c => c.programName.toUpperCase())),
-            usesFiles: dedupeNames(program.files.map(f => f.name.toUpperCase())),
+            usesFiles: dedupeNames(program.files.map(f => {
+                if (f.resolvedObject?.library) {
+                    return `${f.resolvedObject.library.toUpperCase()}/${f.name.toUpperCase()}`;
+                }
+                return f.name.toUpperCase();
+            })),
             includesCopybooks: dedupeNames(program.copybooks.map(c => c.library ? `${c.library}/${c.member}` : c.member)),
         };
         nodes.set(program.programName.toUpperCase(), node);

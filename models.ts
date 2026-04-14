@@ -40,6 +40,7 @@ export interface FileRef {
   keyed: boolean;
   isDisplayFile: boolean;
   isPrinterFile: boolean;
+  resolvedObject?: ResolvedObjectRef;
   location: SourceLocation;
 }
 
@@ -48,7 +49,16 @@ export interface ProgramCall {
   programName: string;
   /** 'CALL' = legacy fixed-style, 'CALLP' = procedure call, 'CALLB' = bound call */
   callType: 'CALL' | 'CALLP' | 'CALLB';
+  resolvedObject?: ResolvedObjectRef;
   location: SourceLocation;
+}
+
+export interface ResolvedObjectRef {
+  objectName: string;
+  library: string;
+  objectType: 'FILE' | 'PGM' | 'SRVPGM' | 'MODULE' | 'UNKNOWN';
+  sourceUri?: string;
+  fields?: string[];
 }
 
 export interface ProcedureRef {
@@ -83,6 +93,22 @@ export interface DataStructureRef {
 export interface SubfieldRef {
   name: string;
   type: string;
+  location: SourceLocation;
+  /** For PF fields: DDS attributes (COLHDG, COLTXT, EDTCDE, etc.) */
+  attributes?: Record<string, string>;
+  /** For PF fields: column heading */
+  columnHeading?: string;
+  /** For PF fields: length in DDS */
+  length?: number;
+  /** For PF fields: decimal positions (if numeric) */
+  decimals?: number;
+}
+
+export interface DdsKeyRef {
+  name: string;
+  keyFields: string[];
+  /** PRIMARY, UNIQUE, DUPLICATE, etc. */
+  keyType: string;
   location: SourceLocation;
 }
 
@@ -131,6 +157,8 @@ export interface RpgleProgram {
   programName: string;
   /** Absolute path to the file on disk */
   filePath: string;
+  /** Logical source kind handled by analyzer dispatcher */
+  sourceType?: 'RPGLE' | 'SQLRPGLE' | 'CLLE' | 'CL38' | 'PF_DDS' | 'DSPF_DDS' | 'UNKNOWN';
   /** Free-format, fixed-format, or mixed */
   sourceFormat: 'FREE' | 'FIXED' | 'MIXED';
   /** Total lines in the source */
@@ -141,6 +169,8 @@ export interface RpgleProgram {
   programCalls: ProgramCall[];
   procedures: ProcedureRef[];
   dataStructures: DataStructureRef[];
+  /** DDS keys (for PF/DSPF sources) */
+  ddsKeys: DdsKeyRef[];
   sqlStatements: SqlStatement[];
   cursors: CursorRef[];
   variables: VariableRef[];
@@ -148,11 +178,20 @@ export interface RpgleProgram {
 
   /** Parsing warnings (e.g., ambiguous lines) */
   warnings: ParseWarning[];
+  /** Semantic issues found after parse (for example, unresolved fields). */
+  fieldValidationIssues: FieldValidationIssue[];
   /** Timestamp of last parse */
   parsedAt: Date;
 }
 
 export interface ParseWarning {
+  message: string;
+  location: SourceLocation;
+}
+
+export interface FieldValidationIssue {
+  fileName: string;
+  fieldName: string;
   message: string;
   location: SourceLocation;
 }

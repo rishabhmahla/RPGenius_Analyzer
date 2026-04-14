@@ -11,7 +11,10 @@ import * as path from 'path';
 
 /** Extensions commonly used for RPGLE source files */
 export const RPGLE_EXTENSIONS = new Set([
-  '.rpgle', '.rpg', '.pgm', '.srvpgm',
+  '.rpgle', '.rpg', '.sqlrpgle', '.sqlrpg',
+  '.clle', '.cl38', '.clp',
+  '.pf', '.pfdds', '.dspf', '.dds',
+  '.pgm', '.srvpgm',
   '.rpgleinc', '.rpglesrc', '.mbr', '.RPGLE', '.RPG',
 ]);
 
@@ -37,7 +40,7 @@ export function getActiveEditorContent(): { content: string; filePath: string } 
   if (!editor) { return null; }
   return {
     content: editor.document.getText(),
-    filePath: editor.document.fileName,
+    filePath: editor.document.uri.toString(true),
   };
 }
 
@@ -67,6 +70,25 @@ export function isRpgleFile(filePath: string, content?: string): boolean {
   return false;
 }
 
+export function isAnalyzableSource(filePath: string, content?: string): boolean {
+  const ext = path.extname(filePath).toLowerCase();
+  if (RPGLE_EXTENSIONS.has(ext)) { return true; }
+
+  if (content) {
+    const firstLines = content.split('\n').slice(0, 40).join('\n').toUpperCase();
+    return (
+      isRpgleFile(filePath, content) ||
+      firstLines.includes('EXEC SQL') ||
+      firstLines.includes('PGM') ||
+      firstLines.includes('DCL VAR(') ||
+      firstLines.includes('OVRDBF') ||
+      /^.{5}A/m.test(content)
+    );
+  }
+
+  return false;
+}
+
 // ─── Workspace Scanning ───────────────────────────────────────────────────────
 
 /**
@@ -78,7 +100,7 @@ export async function findRpgleFiles(
 ): Promise<vscode.Uri[]> {
   const pattern = new vscode.RelativePattern(
     workspaceFolder,
-    '**/*.{rpgle,rpg,RPGLE,RPG,rpgleinc}'
+    '**/*.{rpgle,rpg,sqlrpgle,sqlrpg,clle,cl38,clp,pf,pfdds,dspf,dds,RPGLE,RPG,rpgleinc}'
   );
   const excludes = getExcludePattern();
   return vscode.workspace.findFiles(pattern, excludes, 500);
@@ -152,7 +174,7 @@ export function disposeDecorations(): void {
  */
 export async function navigateToLine(filePath: string, lineNumber: number): Promise<void> {
   try {
-    const uri = vscode.Uri.file(filePath);
+    const uri = toDocumentUri(filePath);
     const doc = await vscode.workspace.openTextDocument(uri);
     const editor = await vscode.window.showTextDocument(doc, {
       viewColumn: vscode.ViewColumn.One,
@@ -176,6 +198,13 @@ export async function navigateToLine(filePath: string, lineNumber: number): Prom
     const msg = err instanceof Error ? err.message : String(err);
     vscode.window.showErrorMessage(`RPGenius: Cannot navigate to file — ${msg}`);
   }
+}
+
+function toDocumentUri(resource: string): vscode.Uri {
+  if (/^[a-z][a-z0-9+.-]*:/i.test(resource)) {
+    return vscode.Uri.parse(resource);
+  }
+  return vscode.Uri.file(resource);
 }
 
 // ─── Status Bar ───────────────────────────────────────────────────────────────

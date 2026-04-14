@@ -49,13 +49,17 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.activate = activate;
 exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
-const rpgleParser_1 = require("./rpgleParser");
 const dependencyBuilder_1 = require("./dependencyBuilder");
 const treeProvider_1 = require("./treeProvider");
+const multiSourceAnalyzer_1 = require("./multiSourceAnalyzer");
 const fileUtils_1 = require("./fileUtils");
+const ibmiIntegration_1 = require("./ibmiIntegration");
+const sourceVisualizer_1 = require("./sourceVisualizer");
+let fieldDiagnostics;
 // ─── Activation ───────────────────────────────────────────────────────────────
 function activate(context) {
     console.log('RPGenius Analyzer is now active.');
+    fieldDiagnostics = vscode.languages.createDiagnosticCollection('rpgeniusFieldValidation');
     // ── Tree View Provider ─────────────────────────────────────────────────────
     const treeProvider = new treeProvider_1.RpgeniusTreeProvider();
     const treeView = vscode.window.createTreeView('rpgeniusAnalyzer', {
@@ -68,6 +72,15 @@ function activate(context) {
     const analyzeFileCmd = vscode.commands.registerCommand('rpgenius.analyzeFile', () => analyzeCurrentFile(treeProvider));
     // 2. Analyze all RPGLE files in workspace
     const analyzeWorkspaceCmd = vscode.commands.registerCommand('rpgenius.analyzeWorkspace', () => analyzeWorkspace(treeProvider));
+    const visualizeSourceCmd = vscode.commands.registerCommand('rpgenius.visualizeSource', async () => {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+            vscode.window.showWarningMessage('RPGenius: Open a source first for visualization.');
+            return;
+        }
+        await (0, sourceVisualizer_1.openSourceVisualization)(editor.document);
+    });
+    const analyzeIbmiMemberCmd = vscode.commands.registerCommand('rpgenius.analyzeIbmiMember', () => (0, ibmiIntegration_1.tryOpenAndAnalyzeIbmiMember)((silent) => analyzeCurrentFile(treeProvider, !!silent)));
     // 3. Internal: navigate to line (triggered by tree item click)
     const navigateCmd = vscode.commands.registerCommand('rpgenius.navigateToLine', (filePath, lineNumber) => (0, fileUtils_1.navigateToLine)(filePath, lineNumber));
     // 4. Refresh current view
@@ -78,7 +91,18 @@ function activate(context) {
     // 5. Clear results
     const clearCmd = vscode.commands.registerCommand('rpgenius.clearResults', () => {
         treeProvider.clear();
+        clearFieldDiagnostics();
         vscode.window.showInformationMessage('RPGenius: Results cleared.');
+    });
+    const openIbmiSourceCmd = vscode.commands.registerCommand('rpgenius.openIbmiObjectSource', async (ref) => {
+        if (!ref) {
+            vscode.window.showWarningMessage('RPGenius: No IBM i object metadata available to open source.');
+            return;
+        }
+        const opened = await (0, ibmiIntegration_1.openIbmiObjectSource)(ref);
+        if (!opened) {
+            vscode.window.showWarningMessage(`RPGenius: Could not open source for ${ref.library}/${ref.objectName}. Open it from Code for IBM i browser and retry.`);
+        }
     });
     // ── Auto-analyze on editor switch ─────────────────────────────────────────
     // When the active editor changes, auto-analyze if it's an RPGLE file and
@@ -87,25 +111,29 @@ function activate(context) {
         if (!editor) {
             return;
         }
-        const filePath = editor.document.fileName;
+        const filePath = editor.document.uri.toString(true);
         const cached = treeProvider.getCached(filePath);
         if (cached) {
             treeProvider.setProgram(cached, filePath);
             return;
         }
         // Auto-analyze recognized RPGLE files silently on first open
-        if ((0, fileUtils_1.isRpgleFile)(filePath, editor.document.getText())) {
+        if ((0, fileUtils_1.isAnalyzableSource)(filePath, editor.document.getText())) {
             analyzeCurrentFile(treeProvider, true /* silent */);
         }
     });
     // ── Auto-analyze on save ───────────────────────────────────────────────────
     const onSave = vscode.workspace.onDidSaveTextDocument(doc => {
-        const filePath = doc.fileName;
-        if ((0, fileUtils_1.isRpgleFile)(filePath, doc.getText())) {
+        const filePath = doc.uri.toString(true);
+        if ((0, fileUtils_1.isAnalyzableSource)(filePath, doc.getText())) {
             // Re-parse after save to keep the tree current
             const content = doc.getText();
-            const program = (0, rpgleParser_1.parseRpgle)(content, filePath);
-            treeProvider.setProgram(program, filePath);
+            const program = (0, multiSourceAnalyzer_1.analyzeSource)(content, filePath);
+            (0, ibmiIntegration_1.enrichProgramWithIbmiMetadata)(program, doc.uri, content)
+                .finally(() => {
+                treeProvider.setProgram(program, filePath);
+                publishFieldDiagnosticsForDocument(doc, program);
+            });
             (0, fileUtils_1.updateStatusBar)(program.programName, {
                 files: program.files.length,
                 calls: program.programCalls.length,
@@ -115,17 +143,20 @@ function activate(context) {
         }
     });
     // ── Register all subscriptions ─────────────────────────────────────────────
-    context.subscriptions.push(treeView, analyzeFileCmd, analyzeWorkspaceCmd, navigateCmd, refreshCmd, clearCmd, onEditorChange, onSave);
+    context.subscriptions.push(treeView, analyzeFileCmd, analyzeWorkspaceCmd, navigateCmd, refreshCmd, clearCmd, analyzeIbmiMemberCmd, openIbmiSourceCmd, onEditorChange, onSave, fieldDiagnostics, visualizeSourceCmd);
     // ── Analyze current file on activation (if one is open) ───────────────────
     if (vscode.window.activeTextEditor) {
         const editor = vscode.window.activeTextEditor;
-        if ((0, fileUtils_1.isRpgleFile)(editor.document.fileName, editor.document.getText())) {
+        if ((0, fileUtils_1.isAnalyzableSource)(editor.document.fileName, editor.document.getText())) {
             analyzeCurrentFile(treeProvider, true /* silent */);
         }
     }
 }
 // ─── Deactivation ─────────────────────────────────────────────────────────────
 function deactivate() {
+    clearFieldDiagnostics();
+    fieldDiagnostics?.dispose();
+    fieldDiagnostics = undefined;
     (0, fileUtils_1.disposeDecorations)();
     (0, fileUtils_1.disposeStatusBar)();
     console.log('RPGenius Analyzer deactivated.');
@@ -147,10 +178,9 @@ async function analyzeCurrentFile(treeProvider, silent = false) {
         return;
     }
     const { content, filePath } = active;
-    if (!(0, fileUtils_1.isRpgleFile)(filePath, content)) {
+    if (!(0, fileUtils_1.isAnalyzableSource)(filePath, content)) {
         if (!silent) {
-            vscode.window.showWarningMessage(`RPGenius: "${filePath.split('/').pop()}" doesn't look like an RPGLE file. ` +
-                `Use a .rpgle/.rpg extension or ensure the file contains RPGLE source.`);
+            vscode.window.showWarningMessage(`RPGenius: "${filePath.split('/').pop()}" is not recognized as RPGLE/SQLRPGLE/CLLE/CL38/PF/DSPF source.`);
         }
         return;
     }
@@ -163,13 +193,21 @@ async function analyzeCurrentFile(treeProvider, silent = false) {
         progress.report({ message: 'Parsing source...' });
         try {
             // Parse the source
-            const program = (0, rpgleParser_1.parseRpgle)(content, filePath);
+            const program = (0, multiSourceAnalyzer_1.analyzeSource)(content, filePath);
+            // Attempt IBM i metadata enrichment when available.
+            const activeEditor = vscode.window.activeTextEditor;
+            const sourceUri = activeEditor ? activeEditor.document.uri : vscode.Uri.file(filePath);
+            await (0, ibmiIntegration_1.enrichProgramWithIbmiMetadata)(program, sourceUri, content);
             progress.report({ message: 'Building dependency model...' });
             // Build dependency graph (used for future cross-file features)
             const _depGraph = (0, dependencyBuilder_1.buildDependencyGraph)(program);
             progress.report({ message: 'Updating tree view...' });
             // Update sidebar tree
             treeProvider.setProgram(program, filePath);
+            const doc = vscode.window.activeTextEditor?.document;
+            if (doc && doc.getText() === content) {
+                publishFieldDiagnosticsForDocument(doc, program);
+            }
             // Update status bar
             (0, fileUtils_1.updateStatusBar)(program.programName, {
                 files: program.files.length,
@@ -195,6 +233,21 @@ async function analyzeCurrentFile(treeProvider, silent = false) {
         }
     });
 }
+function publishFieldDiagnosticsForDocument(doc, program) {
+    if (!fieldDiagnostics) {
+        return;
+    }
+    const diagnostics = program.fieldValidationIssues.map((issue) => {
+        const safeLine = Math.max(0, Math.min(issue.location.line, Math.max(0, doc.lineCount - 1)));
+        const lineText = doc.lineAt(safeLine).text;
+        const range = new vscode.Range(safeLine, 0, safeLine, Math.max(1, lineText.length));
+        return new vscode.Diagnostic(range, issue.message, vscode.DiagnosticSeverity.Warning);
+    });
+    fieldDiagnostics.set(doc.uri, diagnostics);
+}
+function clearFieldDiagnostics() {
+    fieldDiagnostics?.clear();
+}
 /**
  * Analyzes all RPGLE files in the current workspace folders.
  * Shows aggregate results in the tree.
@@ -215,7 +268,7 @@ async function analyzeWorkspace(treeProvider) {
             const uriArrays = await Promise.all(workspaceFolders.map(wf => (0, fileUtils_1.findRpgleFiles)(wf)));
             const allUris = uriArrays.flat();
             if (allUris.length === 0) {
-                vscode.window.showInformationMessage('RPGenius: No RPGLE files found in workspace (looked for .rpgle, .rpg).');
+                vscode.window.showInformationMessage('RPGenius: No supported source files found in workspace.');
                 return;
             }
             progress.report({ message: `Found ${allUris.length} file(s), parsing...` });
@@ -227,7 +280,7 @@ async function analyzeWorkspace(treeProvider) {
                     return null;
                 }
                 try {
-                    return (0, rpgleParser_1.parseRpgle)(content, uri.fsPath);
+                    return (0, multiSourceAnalyzer_1.analyzeSource)(content, uri.fsPath);
                 }
                 catch {
                     return null;
@@ -240,7 +293,8 @@ async function analyzeWorkspace(treeProvider) {
             // In a full workspace view, you'd show a workspace-level root
             const active = (0, fileUtils_1.getActiveEditorContent)();
             const activeProgram = active
-                ? programs.find((p) => p.filePath === active.filePath) ?? programs[0]
+                ? programs.find((p) => p.filePath === active.filePath ||
+                    active.filePath.endsWith(p.filePath)) ?? programs[0]
                 : programs[0];
             if (activeProgram) {
                 treeProvider.setProgram(activeProgram, activeProgram.filePath);
@@ -251,7 +305,7 @@ async function analyzeWorkspace(treeProvider) {
                 procs: programs.reduce((n, p) => n + p.procedures.length, 0),
                 sql: programs.reduce((n, p) => n + p.sqlStatements.length, 0),
             });
-            vscode.window.showInformationMessage(`✅ RPGenius: Analyzed ${programs.length} RPGLE file(s) in workspace.`);
+            vscode.window.showInformationMessage(`✅ RPGenius: Analyzed ${programs.length} supported source file(s) in workspace.`);
         }
         catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
@@ -262,7 +316,7 @@ async function analyzeWorkspace(treeProvider) {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function buildSummaryMessage(program) {
     const parts = [
-        `${program.programName}`,
+        `${program.programName} [${program.sourceType ?? 'RPGLE'}]`,
         `${program.files.length} file(s)`,
         `${program.programCalls.length} call(s)`,
         `${program.procedures.length} procedure(s)`,
