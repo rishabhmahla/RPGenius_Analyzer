@@ -1,0 +1,156 @@
+{
+  "name": "rpgenius-analyzer",
+  "displayName": "RPGenius Analyzer",
+  "description": "Static analysis engine for RPGLE code — maps files, calls, procedures, SQL, cursors and more. No AI required.",
+  "version": "1.0.0",
+  "publisher": "ibmi-dev",
+  "icon": "media/icon.png",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Other",
+    "Linters"
+  ],
+  "keywords": [
+    "rpgle",
+    "rpg",
+    "ibmi",
+    "as400",
+    "ibm i",
+    "static analysis",
+    "code map",
+    "dependency",
+    "sql",
+    "free format",
+    "fixed format"
+  ],
+  "activationEvents": [
+    "onLanguage:rpgle",
+    "onCommand:rpgenius.analyzeFile",
+    "onCommand:rpgenius.analyzeWorkspace"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "rpgenius",
+          "title": "RPGenius Analyzer",
+          "icon": "$(file-code)"
+        }
+      ]
+    },
+    "views": {
+      "rpgenius": [
+        {
+          "id": "rpgeniusAnalyzer",
+          "name": "Program Map",
+          "icon": "$(list-tree)",
+          "contextualTitle": "RPGenius Analyzer"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "rpgenius.analyzeFile",
+        "title": "Analyze RPG Program",
+        "category": "RPGenius",
+        "icon": "$(search)"
+      },
+      {
+        "command": "rpgenius.analyzeWorkspace",
+        "title": "Analyze Entire Workspace",
+        "category": "RPGenius",
+        "icon": "$(folder)"
+      },
+      {
+        "command": "rpgenius.refresh",
+        "title": "Refresh Tree",
+        "category": "RPGenius",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "rpgenius.clearResults",
+        "title": "Clear Results",
+        "category": "RPGenius",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "rpgenius.navigateToLine",
+        "title": "Go to Source Line",
+        "category": "RPGenius"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "rpgenius.analyzeFile",
+          "when": "editorIsOpen",
+          "group": "rpgenius@1"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "rpgenius.analyzeFile",
+          "when": "view == rpgeniusAnalyzer",
+          "group": "navigation@1"
+        },
+        {
+          "command": "rpgenius.analyzeWorkspace",
+          "when": "view == rpgeniusAnalyzer",
+          "group": "navigation@2"
+        },
+        {
+          "command": "rpgenius.refresh",
+          "when": "view == rpgeniusAnalyzer",
+          "group": "navigation@3"
+        },
+        {
+          "command": "rpgenius.clearResults",
+          "when": "view == rpgeniusAnalyzer",
+          "group": "navigation@4"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "rpgenius.analyzeFile",
+          "when": "resourceExtname =~ /\\.(rpgle|rpg|RPG|RPGLE)$/",
+          "group": "rpgenius@1"
+        }
+      ]
+    },
+    "languages": [
+      {
+        "id": "rpgle",
+        "aliases": [
+          "RPGLE",
+          "RPG"
+        ],
+        "extensions": [
+          ".rpgle",
+          ".rpg",
+          ".RPGLE",
+          ".RPG",
+          ".rpgleinc"
+        ]
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "pretest": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^8.58.2",
+    "@typescript-eslint/parser": "^8.58.2",
+    "eslint": "^8.0.0",
+    "typescript": "^5.3.0"
+  }
+}

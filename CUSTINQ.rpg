@@ -1,0 +1,123 @@
+      *=============================================================================
+      * Program  : CUSTINQ
+      * Purpose  : Customer Inquiry - Fixed Format RPG IV
+      * Format   : Fixed (column-positional)
+      *=============================================================================
+     HCOPYRIGHT('ACME Corp') DFTACTGRP(*NO) ACTGRP('CUSTINQ')
+
+      * File Declarations
+     FCUSTMST   IF   E           K DISK
+     FORDERHDR  IF   E           K DISK
+     FCUSTRPT   O    E             PRINTER OFLIND(*INOF)
+     FSCREEND1  CF   E             WORKSTN
+
+      * Copybooks
+      /COPY QRPGLESRC,CUSTCPY
+      /COPY QRPGLESRC,ERRHDL
+      /COPY COMMONLIB,DATESUB
+
+      * Data structures
+     D CustKey         DS
+     D  CustNo                        9P 0
+     D  CustSuffix                    2A
+
+     D OrderTotal      DS
+     D  OrdCount                      5P 0
+     D  OrdAmount                    13P 2
+
+     D ErrorDS         DS
+     D  ErrCode                       7A
+     D  ErrMsg                       80A
+
+      * Standalone variables
+     D WsCustNo        S              9P 0
+     D WsCustName      S             40A
+     D WsFound         S               N
+     D WsLineCount     S              5P 0
+     D WsTaxRate       S              5P 4
+
+      * Constants
+     D MaxLines        C                   CONST(60)
+     D TaxRateCA       C                   CONST(0.0975)
+     D CompanyName     C                   CONST('ACME Corporation')
+
+      * Prototype - external program call
+     D ValidateCust    PR                  ExtPgm('VALCUST')
+     D   VcCustNo                     9P 0 Const
+     D   VcValid                        N
+
+     D SendEmail       PR                  ExtPgm('SNDEMAIL')
+     D   SeRecipient                 50A   Const
+     D   SeSubject                   80A   Const
+     D   SeBody                     500A   Const
+
+      * C-Specs (calculations)
+     C                   Eval      WsCustNo  = 100001
+     C     WsCustNo      Chain     CUSTMST
+     C                   If        %Found(CUSTMST)
+     C                   Eval      WsCustName = CST_NAME
+     C                   Eval      WsFound = *On
+     C                   EndIf
+
+      * Call external programs
+     C                   Call      'CUSTVAL'
+     C                   Call      'ORDPROC'
+     C                   Callp     ValidateCust(WsCustNo : WsFound)
+
+      * EXEC SQL in fixed format
+     C/EXEC SQL
+     C+  SELECT COUNT(*) INTO :WsLineCount
+     C+  FROM   ORDERS
+     C+  WHERE  CUST_NO = :WsCustNo
+     C+    AND  ORD_STATUS = 'A'
+     C/END-EXEC
+
+     C/EXEC SQL
+     C+  DECLARE CUSTCUR CURSOR FOR
+     C+  SELECT CUST_NO, CUST_NAME, CUST_ADDR
+     C+  FROM   CUSTMST
+     C+  WHERE  CUST_STATUS = 'A'
+     C+  ORDER BY CUST_NAME;
+     C/END-EXEC
+
+     C/EXEC SQL
+     C+  OPEN CUSTCUR;
+     C/END-EXEC
+
+      * More calcs
+     C                   Eval      WsTaxRate = TaxRateCA
+     C                   Eval      *InLR = *On
+     C                   Return
+
+      * Procedure: FormatAddress
+     P FormatAddress   B
+     D FormatAddress   PI            80A
+     D   PiStreet                    30A   Const
+     D   PiCity                      20A   Const
+     D   PiState                      2A   Const
+     D   PiZip                       10A   Const
+     D LoResult        S             80A
+
+     C                   Eval      LoResult = %Trim(PiStreet) + ', ' +
+     C                             %Trim(PiCity) + ', ' +
+     C                             PiState + ' ' + PiZip
+     C                   Return    LoResult
+     P FormatAddress   E
+
+      * Procedure: CalcDiscount
+     P CalcDiscount    B
+     D CalcDiscount    PI            13P 2
+     D   PiAmount                    13P 2 Const
+     D   PiCustType                   1A   Const
+     D LoDiscount      S             13P 2
+
+     C                   Select
+     C                   When      PiCustType = 'P'
+     C                   Eval      LoDiscount = PiAmount * 0.15
+     C                   When      PiCustType = 'G'
+     C                   Eval      LoDiscount = PiAmount * 0.10
+     C                   Other
+     C                   Eval      LoDiscount = PiAmount * 0.05
+     C                   EndSl
+     C                   Return    LoDiscount
+     P CalcDiscount    E
