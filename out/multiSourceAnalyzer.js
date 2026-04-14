@@ -40,6 +40,7 @@ const rpgleParser_1 = require("./rpgleParser");
 function detectSourceKind(filePath, content) {
     const lower = filePath.toLowerCase();
     const upper = content.toUpperCase();
+    // ── Extension-based detection (most reliable) ──────────────────────────────
     if (lower.endsWith('.sqlrpgle') || lower.endsWith('.sqlrpg')) {
         return 'SQLRPGLE';
     }
@@ -55,11 +56,24 @@ function detectSourceKind(filePath, content) {
     if (lower.endsWith('.pf') || lower.endsWith('.pfdds')) {
         return 'PF_DDS';
     }
+    if (lower.endsWith('.rpgle') || lower.endsWith('.rpg')) {
+        return 'RPGLE';
+    }
+    // ── .dds extension: determine PF vs DSPF via content ──────────────────────
+    // (both PF and DSPF can use .dds — differentiate by DDS keywords)
+    if (lower.endsWith('.dds')) {
+        if (/\bWORKSTN\b|\bLINE\s*\(\s*\d+\s*\)|\bCOLUMN\s*\(\s*\d+\s*\)|\bPOS\s*\(\s*\d+\s+\d+\s*\)|\bCF\d{2}\b|\bCA\d{2}\b|\bDSPATR\b|\bWINDOW\b|\bSFL\b|\bFLDGRP\b/i.test(upper)) {
+            return 'DSPF_DDS';
+        }
+        return 'PF_DDS';
+    }
+    // ── Content heuristics (no deterministic extension) ───────────────────────
     if (/\bPGM\b/.test(upper) && /\bDCL\b/.test(upper)) {
         return 'CLLE';
     }
     if (/^.{5}A/m.test(content) && /\bR\s+\w+/i.test(content)) {
-        if (/\bCF\d{2}\b|\bDSPATR\b|\bWINDOW\b|\bSFL\b/i.test(upper)) {
+        // DSPF indicators: screen-positioning keywords, function keys, subfiles, display attributes, WORKSTN
+        if (/\bWORKSTN\b|\bLINE\s*\(\s*\d+\s*\)|\bCOLUMN\s*\(\s*\d+\s*\)|\bPOS\s*\(\s*\d+\s+\d+\s*\)|\bCF\d{2}\b|\bCA\d{2}\b|\bDSPATR\b|\bWINDOW\b|\bSFL\b|\bFLDGRP\b/i.test(upper)) {
             return 'DSPF_DDS';
         }
         return 'PF_DDS';
