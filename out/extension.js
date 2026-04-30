@@ -72,13 +72,17 @@ function activate(context) {
     const analyzeFileCmd = vscode.commands.registerCommand('rpgenius.analyzeFile', () => analyzeCurrentFile(treeProvider));
     // 2. Analyze all RPGLE files in workspace
     const analyzeWorkspaceCmd = vscode.commands.registerCommand('rpgenius.analyzeWorkspace', () => analyzeWorkspace(treeProvider));
-    const visualizeSourceCmd = vscode.commands.registerCommand('rpgenius.visualizeSource', async () => {
+    const visualizeSourceCmd = vscode.commands.registerCommand('rpgenius.visualizeSource', async (filePath, selectedRecordName) => {
+        if (typeof filePath === 'string') {
+            await (0, sourceVisualizer_1.openSourceVisualization)(filePath, selectedRecordName);
+            return;
+        }
         const editor = vscode.window.activeTextEditor;
         if (!editor) {
             vscode.window.showWarningMessage('RPGenius: Open a source first for visualization.');
             return;
         }
-        await (0, sourceVisualizer_1.openSourceVisualization)(editor.document);
+        await (0, sourceVisualizer_1.openSourceVisualization)(editor.document, selectedRecordName);
     });
     const analyzeIbmiMemberCmd = vscode.commands.registerCommand('rpgenius.analyzeIbmiMember', () => (0, ibmiIntegration_1.tryOpenAndAnalyzeIbmiMember)((silent) => analyzeCurrentFile(treeProvider, !!silent)));
     // 3. Internal: navigate to line (triggered by tree item click)

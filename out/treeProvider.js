@@ -277,7 +277,15 @@ function buildDdsTree(program, filePath, root) {
             return new RpgTreeItem(label, 'subfield', vscode.TreeItemCollapsibleState.None, [], sf.location, filePath, attrStr || sf.type, `Field: ${sf.name}\nType: ${sf.type}${lenStr}${heading}\nAttributes: ${attrStr || 'none'}\nLine: ${sf.location.line + 1}`);
         });
         const desc = `${ds.subfields.length} field${ds.subfields.length !== 1 ? 's' : ''}`;
-        return new RpgTreeItem(ds.name, 'dataStructure', sfItems.length > 0 ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None, sfItems, ds.startLocation, filePath, desc, `Record Format: ${ds.name}\nLine: ${ds.startLocation.line + 1}`);
+        const recordItem = new RpgTreeItem(ds.name, 'dataStructure', sfItems.length > 0 ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None, sfItems, ds.startLocation, filePath, desc, `Record Format: ${ds.name}\nLine: ${ds.startLocation.line + 1}`);
+        if (program.sourceType === 'DSPF_DDS') {
+            recordItem.command = {
+                command: 'rpgenius.visualizeSource',
+                title: 'View DSPF Record Format',
+                arguments: [filePath, ds.name],
+            };
+        }
+        return recordItem;
     });
     root.children.push(makeCategory('Record Formats', 'symbol-structure', dsItems, filePath));
     // ── Keys ───────────────────────────────────────────────────────────────────

@@ -431,7 +431,7 @@ function buildDdsTree(program: RpgleProgram, filePath: string, root: RpgTreeItem
     });
 
     const desc = `${ds.subfields.length} field${ds.subfields.length !== 1 ? 's' : ''}`;
-    return new RpgTreeItem(
+    const recordItem = new RpgTreeItem(
       ds.name,
       'dataStructure',
       sfItems.length > 0 ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None,
@@ -441,6 +441,16 @@ function buildDdsTree(program: RpgleProgram, filePath: string, root: RpgTreeItem
       desc,
       `Record Format: ${ds.name}\nLine: ${ds.startLocation.line + 1}`
     );
+
+    if (program.sourceType === 'DSPF_DDS') {
+      recordItem.command = {
+        command: 'rpgenius.visualizeSource',
+        title: 'View DSPF Record Format',
+        arguments: [filePath, ds.name],
+      };
+    }
+
+    return recordItem;
   });
 
   root.children.push(makeCategory('Record Formats', 'symbol-structure', dsItems, filePath));

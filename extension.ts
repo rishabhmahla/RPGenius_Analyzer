@@ -67,13 +67,18 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const visualizeSourceCmd = vscode.commands.registerCommand(
     'rpgenius.visualizeSource',
-    async () => {
+    async (filePath?: string, selectedRecordName?: string) => {
+      if (typeof filePath === 'string') {
+        await openSourceVisualization(filePath, selectedRecordName);
+        return;
+      }
+
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
         vscode.window.showWarningMessage('RPGenius: Open a source first for visualization.');
         return;
       }
-      await openSourceVisualization(editor.document);
+      await openSourceVisualization(editor.document, selectedRecordName);
     }
   );
 

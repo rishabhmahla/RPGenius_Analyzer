@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import { detectSourceKind } from './multiSourceAnalyzer';
 import { renderDspfAsHtml } from './dspfRenderer';
 
+let currentVisualizationPanel: vscode.WebviewPanel | undefined;
+
 interface PfColumn {
   name: string;
   type: string;
@@ -9,7 +11,14 @@ interface PfColumn {
   columnHeading?: string;
 }
 
-export async function openSourceVisualization(doc: vscode.TextDocument): Promise<void> {
+export async function openSourceVisualization(
+  documentOrPath: vscode.TextDocument | string,
+  selectedRecordName?: string
+): Promise<void> {
+  const doc = typeof documentOrPath === 'string'
+    ? await vscode.workspace.openTextDocument(vscode.Uri.parse(documentOrPath))
+    : documentOrPath;
+
   const content = doc.getText();
   const sourceKind = detectSourceKind(doc.uri.toString(true), content);
 
@@ -18,16 +27,39 @@ export async function openSourceVisualization(doc: vscode.TextDocument): Promise
     return;
   }
 
-  const panel = vscode.window.createWebviewPanel(
-    'rpgeniusVisualization',
-    `RPGenius Preview: ${doc.fileName.split('/').pop() ?? 'source'}`,
-    vscode.ViewColumn.Beside,
-    { enableScripts: false }
-  );
+  const title = `RPGenius Preview: ${doc.fileName.split('/').pop() ?? 'source'}${selectedRecordName ? ` — ${selectedRecordName}` : ''}`;
 
-  panel.webview.html = sourceKind === 'DSPF_DDS'
-    ? renderDspfAsHtml(content)
+  if (!currentVisualizationPanel) {
+    currentVisualizationPanel = vscode.window.createWebviewPanel(
+      'rpgeniusVisualization',
+      title,
+      vscode.ViewColumn.Beside,
+      { enableScripts: false }
+    );
+
+    currentVisualizationPanel.onDidDispose(() => {
+      currentVisualizationPanel = undefined;
+    });
+  } else {
+    currentVisualizationPanel.title = title;
+    currentVisualizationPanel.reveal(vscode.ViewColumn.Beside);
+  }
+
+  const panel = currentVisualizationPanel;
+  currentVisualizationPanel.webview.options = { enableScripts: true };
+  currentVisualizationPanel.webview.html = sourceKind === 'DSPF_DDS'
+    ? renderDspfAsHtml(content, selectedRecordName)
     : buildPfHtml(content);
+
+  panel.webview.onDidReceiveMessage(async (msg: any) => {
+    if (msg.command === 'refresh') {
+      const updatedDoc = await vscode.workspace.openTextDocument(doc.uri);
+      const updatedContent = updatedDoc.getText();
+      panel.webview.html = sourceKind === 'DSPF_DDS'
+        ? renderDspfAsHtml(updatedContent, selectedRecordName)
+        : buildPfHtml(updatedContent);
+    }
+  });
 }
 
 function buildPfHtml(content: string): string {
